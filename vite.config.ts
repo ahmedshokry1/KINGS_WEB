@@ -3,9 +3,10 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+
 export default defineConfig(() => {
   return {
-    base: './',
+    base: '/KINGS_WEB/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
