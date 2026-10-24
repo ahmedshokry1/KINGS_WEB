@@ -4,12 +4,14 @@ import { Crown, MessageCircle, ShieldCheck, Mail, Phone, Heart } from 'lucide-re
 interface FooterProps {
   onOpenTracking: () => void;
   onOpenAdvisor: () => void;
+  onOpenCustomerPortal?: () => void;
   onSelectCategory: (cat: string) => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   onOpenTracking,
   onOpenAdvisor,
+  onOpenCustomerPortal,
   onSelectCategory,
 }) => {
   return (
@@ -107,6 +109,16 @@ export const Footer: React.FC<FooterProps> = ({
                   تتبع حالة طلبك
                 </button>
               </li>
+              {onOpenCustomerPortal && (
+                <li>
+                  <button 
+                    onClick={onOpenCustomerPortal} 
+                    className="text-amber-400 hover:text-amber-300 font-bold transition-colors flex items-center gap-1"
+                  >
+                    <span>إدارة اشتراكاتي والتجديد 🔑</span>
+                  </button>
+                </li>
+              )}
               <li>
                 <button onClick={onOpenAdvisor} className="hover:text-amber-400 transition-colors">
                   مستشار الذكاء الاصطناعي

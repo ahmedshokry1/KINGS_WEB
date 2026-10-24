@@ -19,9 +19,25 @@ import {
   Copy,
   Sliders,
   Check,
-  AlertTriangle
+  AlertTriangle,
+  UserCheck,
+  Calendar,
+  RefreshCw,
+  Power,
+  Key,
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-react';
-import { Order, SubscriptionProduct, PlanVariant, CurrencyCode, ProductCategory, DeliveryType } from '../types/store';
+import { 
+  Order, 
+  SubscriptionProduct, 
+  PlanVariant, 
+  CurrencyCode, 
+  ProductCategory, 
+  DeliveryType,
+  CustomerSubscription,
+  SubscriptionStatus 
+} from '../types/store';
 import { formatPrice } from '../utils/currency';
 import { ProductBrandIcon } from './ProductBrandIcon';
 
@@ -30,8 +46,12 @@ interface AdminDashboardProps {
   onClose: () => void;
   orders: Order[];
   products: SubscriptionProduct[];
+  subscriptions: CustomerSubscription[];
   currency: CurrencyCode;
   onUpdateOrderStatus: (orderId: string, newStatus: Order['status'], notes?: string) => void;
+  onUpdateSubscriptionStatus: (subId: string, newStatus: SubscriptionStatus) => void;
+  onToggleCustomerAutoRenew: (subId: string, enabled: boolean) => void;
+  onExtendSubscription: (subId: string, days: number) => void;
   onAddProduct: (product: SubscriptionProduct) => void;
   onUpdateProduct: (product: SubscriptionProduct) => void;
   onDeleteProduct: (productId: string) => void;
@@ -43,8 +63,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onClose,
   orders,
   products,
+  subscriptions,
   currency,
   onUpdateOrderStatus,
+  onUpdateSubscriptionStatus,
+  onToggleCustomerAutoRenew,
+  onExtendSubscription,
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
@@ -52,8 +76,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'products'>('products');
+  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'subscriptions'>('products');
   const [orderFilter, setOrderFilter] = useState<string>('all');
+  const [subFilter, setSubFilter] = useState<string>('all');
+  const [subSearch, setSubSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -347,6 +373,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <Clock className="w-4 h-4" />
               <span>طلبات المشتركين والتفعيل ({orders.length})</span>
             </button>
+
+            <button
+              onClick={() => setActiveTab('subscriptions')}
+              className={`py-3 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 ${
+                activeTab === 'subscriptions'
+                  ? 'border-amber-400 text-amber-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>إدارة الاشتراكات والتجديد التلقائي ({subscriptions.length})</span>
+            </button>
           </div>
 
           {activeTab === 'products' && (
@@ -637,6 +675,261 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     );
                   })
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: Customer Subscriptions Management & Auto-Renewals */}
+          {activeTab === 'subscriptions' && (
+            <div className="space-y-4">
+              
+              {/* Stats overview */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                  <span className="text-[11px] text-emerald-400 block font-semibold">اشتراكات نشطة</span>
+                  <span className="text-lg font-black text-white font-mono">
+                    {subscriptions.filter((s) => s.status === 'active').length}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                  <span className="text-[11px] text-purple-400 block font-semibold">تجديد تلقائي مفعل</span>
+                  <span className="text-lg font-black text-white font-mono">
+                    {subscriptions.filter((s) => s.autoRenew).length}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <span className="text-[11px] text-amber-400 block font-semibold">قيد التجديد</span>
+                  <span className="text-lg font-black text-white font-mono">
+                    {subscriptions.filter((s) => s.status === 'pending_renewal').length}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <span className="text-[11px] text-rose-400 block font-semibold">منتهية أو ملغاة</span>
+                  <span className="text-lg font-black text-white font-mono">
+                    {subscriptions.filter((s) => s.status === 'expired' || s.status === 'cancelled').length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Subscriptions Filter and Search */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-slate-800">
+                <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
+                  {[
+                    { id: 'all', label: 'الكل' },
+                    { id: 'active', label: 'نشط' },
+                    { id: 'pending_renewal', label: 'قيد التجديد' },
+                    { id: 'expired', label: 'منتهي' },
+                    { id: 'cancelled', label: 'ملغى' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setSubFilter(tab.id)}
+                      className={`px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+                        subFilter === tab.id
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative w-full sm:w-72">
+                  <input
+                    type="text"
+                    value={subSearch}
+                    onChange={(e) => setSubSearch(e.target.value)}
+                    placeholder="بحث بإيميل العميل أو اسم الأداة..."
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl pr-9 pl-3 py-1.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-amber-400"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Subscriptions Cards List */}
+              <div className="space-y-3">
+                {subscriptions
+                  .filter((sub) => {
+                    if (subFilter !== 'all' && sub.status !== subFilter) return false;
+                    if (subSearch.trim()) {
+                      const q = subSearch.toLowerCase().trim();
+                      return (
+                        sub.customerName.toLowerCase().includes(q) ||
+                        sub.customerEmail.toLowerCase().includes(q) ||
+                        sub.customerPhone.includes(q) ||
+                        sub.productName.toLowerCase().includes(q) ||
+                        sub.planLabel.toLowerCase().includes(q)
+                      );
+                    }
+                    return true;
+                  })
+                  .map((sub) => {
+                    const endStr = sub.expiryDate || sub.endDate || new Date().toISOString();
+                    const daysRemaining = Math.max(
+                      0,
+                      Math.ceil((new Date(endStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                    );
+
+                    const reminderMsg = encodeURIComponent(
+                      `مرحباً ${sub.customerName}، معك الدعم الفني من كينجز ستور بخصوص اشتراكك في ${sub.productName}. باقي على انتهاء اشتراكك ${daysRemaining} يوم. هل ترغب في التجديد والحفاظ على استمرارية الخدمة بنفس السعر المخفض (${sub.renewalPriceEGP} ج.م)؟`
+                    );
+                    const whatsappLink = `https://wa.me/${sub.customerPhone.replace(/[^0-9]/g, '')}?text=${reminderMsg}`;
+
+                    return (
+                      <div
+                        key={sub.id}
+                        className="p-4 rounded-2xl bg-slate-800/40 border border-slate-800 hover:border-slate-700 transition-all space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                          <div className="flex items-center gap-3">
+                            <ProductBrandIcon slug={sub.productSlug} brand={sub.productName} size="sm" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-white text-sm">{sub.productName}</span>
+                                <span className="text-xs text-amber-400/90 font-mono bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                  {sub.planLabel}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-slate-400">
+                                العميل: <strong className="text-slate-200">{sub.customerName}</strong> ({sub.customerEmail})
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Status changer */}
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={sub.status}
+                              onChange={(e) => onUpdateSubscriptionStatus(sub.id, e.target.value as SubscriptionStatus)}
+                              className={`text-xs font-bold px-2.5 py-1 rounded-lg border focus:outline-none cursor-pointer ${
+                                sub.status === 'active'
+                                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                                  : sub.status === 'pending_renewal'
+                                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                                  : sub.status === 'expired'
+                                  ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
+                                  : 'bg-slate-700 text-slate-300 border-slate-600'
+                              }`}
+                            >
+                              <option value="active">نشط (Active)</option>
+                              <option value="pending_renewal">قيد التجديد (Pending Renewal)</option>
+                              <option value="expired">منتهي الصلاحية (Expired)</option>
+                              <option value="cancelled">ملغى (Cancelled)</option>
+                            </select>
+
+                            <button
+                              onClick={() => onToggleCustomerAutoRenew(sub.id, !sub.autoRenew)}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors ${
+                                sub.autoRenew
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30'
+                                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                              }`}
+                              title="تبديل حالة التجديد التلقائي"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${sub.autoRenew ? 'animate-spin' : ''}`} style={{ animationDuration: '6s' }} />
+                              <span>{sub.autoRenew ? 'تجديد مجدول' : 'تجديد يدوي'}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Dates & Remaining days bar */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+                          <div>
+                            <span className="text-slate-400 block mb-0.5">فترة الاشتراك:</span>
+                            <span className="text-slate-200 font-mono text-[11px]">
+                              {sub.startDate} إلى {endStr}
+                            </span>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between text-slate-400 mb-1">
+                              <span>الأيام المتبقية:</span>
+                              <span className="font-bold text-amber-400 font-mono">{daysRemaining} يوم</span>
+                            </div>
+                            <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${
+                                  daysRemaining > 30 ? 'bg-emerald-500' : daysRemaining > 7 ? 'bg-amber-500' : 'bg-rose-500'
+                                }`}
+                                style={{ width: `${Math.min(100, (daysRemaining / 365) * 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="text-slate-400 block mb-0.5">قيمة التجديد القادم:</span>
+                            <span className="text-emerald-400 font-bold font-mono">
+                              {formatPrice(sub.renewalPriceEGP, currency)}
+                            </span>
+                            {sub.autoRenew && sub.autoRenewDate && (
+                              <span className="text-[10px] text-purple-300 block">
+                                مجدول في: {sub.autoRenewDate}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Credentials viewer & quick extension actions */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                          {/* Credentials summary */}
+                          <div className="flex items-center gap-2">
+                            {sub.credentials?.email && (
+                              <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded text-slate-300 font-mono text-[11px] border border-slate-800">
+                                <span>{sub.credentials.email}</span>
+                                <button
+                                  onClick={() => handleCopy(sub.credentials!.email!, `sub-mail-${sub.id}`)}
+                                  className="text-slate-400 hover:text-white"
+                                  title="نسخ الإيميل"
+                                >
+                                  {copiedId === `sub-mail-${sub.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            )}
+                            {sub.credentials?.password && (
+                              <div className="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded text-slate-300 font-mono text-[11px] border border-slate-800">
+                                <span>••••••</span>
+                                <button
+                                  onClick={() => handleCopy(sub.credentials!.password!, `sub-pass-${sub.id}`)}
+                                  className="text-slate-400 hover:text-white"
+                                  title="نسخ كلمة السر"
+                                >
+                                  {copiedId === `sub-pass-${sub.id}` ? <Check className="w-3 h-3 text-emerald-400" /> : <Key className="w-3 h-3" />}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Quick Admin Actions */}
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => onExtendSubscription(sub.id, 30)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors border border-slate-700"
+                            >
+                              + تمديد 30 يوم
+                            </button>
+
+                            <button
+                              onClick={() => onExtendSubscription(sub.id, 365)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold transition-colors border border-amber-500/30"
+                            >
+                              + تمديد سنة كاملة
+                            </button>
+
+                            <a
+                              href={whatsappLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-colors"
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span>تذكير تجديد واتساب</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

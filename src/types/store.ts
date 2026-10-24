@@ -36,7 +36,7 @@ export interface SubscriptionProduct {
   isFeatured?: boolean;
   shortDescAr: string;
   fullDescAr: string;
-  iconName: string; // lucide icon identifier or visual styling
+  iconName: string;
   colorScheme: {
     accent: string;
     bgGlow: string;
@@ -50,6 +50,17 @@ export interface SubscriptionProduct {
   deliveryTime: string;
   plans: PlanVariant[];
   featuresAr: string[];
+  benefitsAr?: string[];
+  useCasesAr?: { role: string; desc: string }[];
+  officialVsKings?: {
+    officialPriceUSD: string;
+    kingsPriceEGP: string;
+    savingsText: string;
+  };
+  previewHighlights?: {
+    label: string;
+    value: string;
+  }[];
   activationStepsAr: string[];
   requirementsAr: string;
   faqs: { question: string; answer: string }[];
@@ -61,11 +72,11 @@ export interface CurrencyConfig {
   code: CurrencyCode;
   nameAr: string;
   symbol: string;
-  rateToEGP: number; // 1 unit of this currency = how many EGP (e.g. USD = 50.5 EGP, SAR = 13.5 EGP, AED = 13.7 EGP)
+  rateToEGP: number;
 }
 
 export interface CartItem {
-  id: string; // generated unique cart id
+  id: string;
   productId: string;
   product: SubscriptionProduct;
   selectedPlan: PlanVariant;
@@ -84,7 +95,7 @@ export type OrderStatus =
 
 export interface Order {
   id: string;
-  orderNumber: string; // e.g. KS-9281
+  orderNumber: string;
   createdAt: string;
   customerName: string;
   customerEmail: string;
@@ -107,6 +118,42 @@ export interface Order {
   status: OrderStatus;
   activationCode?: string;
   activationNotes?: string;
+}
+
+export type SubscriptionStatus = 'active' | 'expired' | 'cancelled' | 'pending_renewal';
+
+export interface CustomerSubscription {
+  id: string;
+  subscriptionCode?: string; // e.g. SUB-9421
+  orderNumber?: string;
+  orderId?: string;
+  customerEmail: string;
+  customerName: string;
+  customerPhone: string;
+  productId: string;
+  productName: string;
+  productSlug: string;
+  planId?: string;
+  planLabel: string;
+  durationMonths?: number;
+  status: SubscriptionStatus;
+  startDate: string; // ISO date string
+  expiryDate: string; // ISO date string
+  endDate?: string; // ISO date string alias
+  autoRenew: boolean;
+  autoRenewDate?: string;
+  renewalPriceEGP: number;
+  deliveryType: DeliveryType;
+  credentials?: {
+    email?: string;
+    password?: string;
+    inviteUrl?: string;
+    inviteStatus?: string;
+    licenseKey?: string;
+    loginPortalUrl?: string;
+    notes?: string;
+  };
+  lastRenewalNotice?: string;
 }
 
 export interface Review {

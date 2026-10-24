@@ -9,7 +9,8 @@ import {
   X,
   Lock,
   ShieldCheck,
-  Sliders
+  Sliders,
+  UserCheck
 } from 'lucide-react';
 import { CurrencyCode } from '../types/store';
 import { CURRENCIES, formatPrice } from '../utils/currency';
@@ -20,6 +21,7 @@ interface NavbarProps {
   currentCurrency: CurrencyCode;
   onCurrencyChange: (currency: CurrencyCode) => void;
   onOpenCart: () => void;
+  onOpenCustomerPortal: () => void;
   onOpenAdvisor: () => void;
   onOpenTracking: () => void;
   onOpenAdmin: () => void;
@@ -36,6 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentCurrency,
   onCurrencyChange,
   onOpenCart,
+  onOpenCustomerPortal,
   onOpenAdvisor,
   onOpenTracking,
   onOpenAdmin,
@@ -115,6 +118,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
               <span>مستشار الاشتراكات</span>
+            </button>
+
+            {/* Customer Subscriptions Portal button */}
+            <button
+              onClick={onOpenCustomerPortal}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 to-yellow-500/10 hover:from-amber-500/20 hover:to-yellow-500/20 border border-amber-500/40 text-amber-300 hover:text-amber-200 text-xs font-bold transition-all shadow-sm"
+              title="بوابة إدارة الاشتراكات والتجديد التلقائي للعميل"
+            >
+              <UserCheck className="w-4 h-4 text-amber-400" />
+              <span>اشتراكاتي</span>
+              <span className="hidden md:inline text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-full font-mono">حسابي</span>
             </button>
 
             {/* Order Tracking button */}

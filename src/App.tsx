@@ -32,6 +32,8 @@ import { FaqSection } from './components/FaqSection';
 import { Footer } from './components/Footer';
 import { FloatingWhatsApp } from './components/FloatingWhatsApp';
 import { RecentSalesToast } from './components/RecentSalesToast';
+import { CustomerPortalModal } from './components/CustomerPortalModal';
+import { ProductDetailPage } from './components/ProductDetailPage';
 
 import { 
   SubscriptionProduct, 
@@ -39,9 +41,11 @@ import {
   CartItem, 
   CurrencyCode, 
   Order, 
-  ProductCategory 
+  ProductCategory,
+  CustomerSubscription,
+  SubscriptionStatus
 } from './types/store';
-import { INITIAL_PRODUCTS, MOCK_REVIEWS, INITIAL_ORDERS } from './data/mockProducts';
+import { INITIAL_PRODUCTS, MOCK_REVIEWS, INITIAL_ORDERS, INITIAL_SUBSCRIPTIONS } from './data/mockProducts';
 
 export default function App() {
   // Store data state
@@ -69,8 +73,26 @@ export default function App() {
     return INITIAL_ORDERS;
   });
 
+  const [subscriptions, setSubscriptions] = useState<CustomerSubscription[]>(() => {
+    const saved = localStorage.getItem('kings_store_subs');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // fallback
+      }
+    }
+    return INITIAL_SUBSCRIPTIONS;
+  });
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [currency, setCurrency] = useState<CurrencyCode>('EGP');
+
+  // Dedicated Product Detail Page navigation slug (null = catalog view)
+  const [activeProductSlug, setActiveProductSlug] = useState<string | null>(null);
+
+  // Customer Portal Modal
+  const [isCustomerPortalOpen, setIsCustomerPortalOpen] = useState(false);
 
   // Admin security auth state
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
@@ -79,7 +101,7 @@ export default function App() {
   const [isAdminLoginOpen, setIsAdminLoginOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
 
-  // Sync to local storage whenever products or orders change
+  // Sync to local storage whenever products, orders or subscriptions change
   useEffect(() => {
     localStorage.setItem('kings_store_products', JSON.stringify(products));
   }, [products]);
@@ -87,6 +109,78 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('kings_store_orders', JSON.stringify(orders));
   }, [orders]);
+
+  useEffect(() => {
+    localStorage.setItem('kings_store_subs', JSON.stringify(subscriptions));
+  }, [subscriptions]);
+
+  // Subscription management operations
+  const handleToggleAutoRenew = (subId: string, enabled: boolean) => {
+    setSubscriptions((prev) =>
+      prev.map((sub) => {
+        if (sub.id === subId) {
+          const autoRenewDate = enabled ? (sub.expiryDate || sub.endDate) : undefined;
+          return { ...sub, autoRenew: enabled, autoRenewDate };
+        }
+        return sub;
+      })
+    );
+  };
+
+  const handleRenewNow = (subscription: CustomerSubscription) => {
+    // Extend end date by 30 days or plan duration
+    const currentEnd = new Date(subscription.expiryDate || subscription.endDate || new Date());
+    currentEnd.setMonth(currentEnd.getMonth() + 1);
+    const newEndDate = currentEnd.toISOString().split('T')[0];
+
+    setSubscriptions((prev) =>
+      prev.map((sub) => {
+        if (sub.id === subscription.id) {
+          return {
+            ...sub,
+            status: 'active',
+            expiryDate: newEndDate,
+            endDate: newEndDate,
+            autoRenewDate: sub.autoRenew ? newEndDate : undefined,
+          };
+        }
+        return sub;
+      })
+    );
+  };
+
+  const handleCancelSubscription = (subId: string) => {
+    setSubscriptions((prev) =>
+      prev.map((sub) => (sub.id === subId ? { ...sub, status: 'cancelled', autoRenew: false } : sub))
+    );
+  };
+
+  const handleUpdateSubscriptionStatus = (subId: string, newStatus: SubscriptionStatus) => {
+    setSubscriptions((prev) =>
+      prev.map((sub) => (sub.id === subId ? { ...sub, status: newStatus } : sub))
+    );
+  };
+
+  const handleExtendSubscription = (subId: string, days: number) => {
+    setSubscriptions((prev) =>
+      prev.map((sub) => {
+        if (sub.id === subId) {
+          const baseStr = sub.expiryDate || sub.endDate || new Date().toISOString();
+          const baseDate = new Date(baseStr > new Date().toISOString() ? baseStr : new Date());
+          baseDate.setDate(baseDate.getDate() + days);
+          const newEndDate = baseDate.toISOString().split('T')[0];
+          return {
+            ...sub,
+            status: 'active',
+            expiryDate: newEndDate,
+            endDate: newEndDate,
+            autoRenewDate: sub.autoRenew ? newEndDate : undefined,
+          };
+        }
+        return sub;
+      })
+    );
+  };
 
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
@@ -194,6 +288,47 @@ export default function App() {
   // Order placed handler
   const handleOrderPlaced = (newOrder: Order) => {
     setOrders((prev) => [newOrder, ...prev]);
+
+    // Automatically create customer subscriptions for each ordered item
+    const newSubs: CustomerSubscription[] = newOrder.items.map((it, idx) => {
+      const now = new Date();
+      const end = new Date(now);
+      const months = it.planLabel.includes('3 سنوات') ? 36 : it.planLabel.includes('سنة') ? 12 : 1;
+      end.setMonth(end.getMonth() + months);
+      
+      const startDateStr = now.toISOString().split('T')[0];
+      const endDateStr = end.toISOString().split('T')[0];
+
+      return {
+        id: `sub-${newOrder.id}-${idx}`,
+        subscriptionCode: `SUB-${Math.floor(1000 + Math.random() * 9000)}`,
+        orderId: newOrder.id,
+        orderNumber: newOrder.orderNumber,
+        customerName: newOrder.customerName,
+        customerEmail: newOrder.customerEmail,
+        customerPhone: newOrder.customerPhone,
+        productId: it.productId,
+        productName: it.productName,
+        productSlug: it.productName.toLowerCase().replace(/\s+/g, '-'),
+        planId: `plan-${it.productId}`,
+        planLabel: it.planLabel,
+        durationMonths: months,
+        status: 'active' as SubscriptionStatus,
+        startDate: startDateStr,
+        expiryDate: endDateStr,
+        endDate: endDateStr,
+        autoRenew: true,
+        autoRenewDate: endDateStr,
+        renewalPriceEGP: it.priceEGP,
+        deliveryType: it.deliveryType || 'invite',
+        credentials: {
+          email: newOrder.customerEmail,
+          inviteStatus: 'تم إرسال دعوة التفعيل الرسمية إلى بريدك الإلكتروني',
+        },
+      };
+    });
+
+    setSubscriptions((prev) => [...newSubs, ...prev]);
     setCart([]); // Clear cart
     setAppliedCoupon(null);
     setIsCheckoutOpen(false);
@@ -312,6 +447,12 @@ export default function App() {
       });
   }, [products, selectedCategory, selectedDeliveryFilter, searchQuery, sortBy]);
 
+  // Active product for dedicated product detail page
+  const activeProduct = useMemo(() => {
+    if (!activeProductSlug) return null;
+    return products.find((p) => p.slug === activeProductSlug || p.id === activeProductSlug) || null;
+  }, [activeProductSlug, products]);
+
   return (
     <div className="min-h-screen bg-[#070a12] text-slate-100 flex flex-col font-['Cairo',sans-serif]">
       
@@ -322,6 +463,7 @@ export default function App() {
         currentCurrency={currency}
         onCurrencyChange={setCurrency}
         onOpenCart={() => setIsCartOpen(true)}
+        onOpenCustomerPortal={() => setIsCustomerPortalOpen(true)}
         onOpenAdvisor={() => setIsAdvisorOpen(true)}
         onOpenTracking={() => {
           setTrackingInitialNumber('');
@@ -331,153 +473,181 @@ export default function App() {
         isAdminLoggedIn={isAdminLoggedIn}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        onSelectCategory={setSelectedCategory}
+        onSelectCategory={(cat) => {
+          setActiveProductSlug(null);
+          setSelectedCategory(cat);
+        }}
         selectedCategory={selectedCategory}
       />
 
-      {/* Hero Section */}
-      <HeroBanner
-        onSelectCategory={setSelectedCategory}
-        onOpenAdvisor={() => setIsAdvisorOpen(true)}
-        currency={currency}
-      />
+      {/* Main View: Dedicated Product Detail Page or Catalog Home */}
+      {activeProduct ? (
+        <ProductDetailPage
+          product={activeProduct}
+          currency={currency}
+          onBack={() => {
+            setActiveProductSlug(null);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          onAddToCart={handleAddToCart}
+          onBuyNow={handleBuyNow}
+          onSelectOtherProduct={(slug) => {
+            setActiveProductSlug(slug);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+          allProducts={products}
+        />
+      ) : (
+        <>
+          {/* Hero Section */}
+          <HeroBanner
+            onSelectCategory={setSelectedCategory}
+            onOpenAdvisor={() => setIsAdvisorOpen(true)}
+            currency={currency}
+          />
 
-      {/* Main Catalog Section */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10" id="catalog-section">
-        
-        {/* Category Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-6 no-scrollbar scroll-smooth">
-          {categories.map((cat) => {
-            const Icon = cat.icon;
-            const isSelected = selectedCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
-                  isSelected
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/25 scale-105'
-                    : 'bg-slate-900/80 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${isSelected ? 'text-slate-950' : 'text-amber-400'}`} />
-                <span>{cat.label}</span>
-              </button>
-            );
-          })}
-        </div>
+          {/* Main Catalog Section */}
+          <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10" id="catalog-section">
+            
+            {/* Category Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-6 no-scrollbar scroll-smooth">
+              {categories.map((cat) => {
+                const Icon = cat.icon;
+                const isSelected = selectedCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all border ${
+                      isSelected
+                        ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-lg shadow-amber-500/25 scale-105'
+                        : 'bg-slate-900/80 hover:bg-slate-800 border-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 ${isSelected ? 'text-slate-950' : 'text-amber-400'}`} />
+                    <span>{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-        {/* Filters and Sorters Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/50 border border-slate-800/80 mb-8">
-          
-          {/* Quick Filters */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400 font-semibold flex items-center gap-1">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-              <span>تصفية سريعة:</span>
-            </span>
+            {/* Filters and Sorters Strip */}
+            <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900/50 border border-slate-800/80 mb-8">
+              
+              {/* Quick Filters */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-slate-400 font-semibold flex items-center gap-1">
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
+                  <span>تصفية سريعة:</span>
+                </span>
 
-            <button
-              onClick={() => setSelectedDeliveryFilter('all')}
-              className={`px-3 py-1.5 rounded-xl border transition-all ${
-                selectedDeliveryFilter === 'all'
-                  ? 'bg-amber-500/20 border-amber-500/80 text-amber-300 font-bold'
-                  : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              الكل ({products.length})
-            </button>
+                <button
+                  onClick={() => setSelectedDeliveryFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl border transition-all ${
+                    selectedDeliveryFilter === 'all'
+                      ? 'bg-amber-500/20 border-amber-500/80 text-amber-300 font-bold'
+                      : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  الكل ({products.length})
+                </button>
 
-            <button
-              onClick={() => setSelectedDeliveryFilter('invite')}
-              className={`px-3 py-1.5 rounded-xl border transition-all ${
-                selectedDeliveryFilter === 'invite'
-                  ? 'bg-cyan-500/20 border-cyan-500/80 text-cyan-300 font-bold'
-                  : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              تفعيل على إيميلك الخاص ✉️
-            </button>
+                <button
+                  onClick={() => setSelectedDeliveryFilter('invite')}
+                  className={`px-3 py-1.5 rounded-xl border transition-all ${
+                    selectedDeliveryFilter === 'invite'
+                      ? 'bg-cyan-500/20 border-cyan-500/80 text-cyan-300 font-bold'
+                      : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  تفعيل على إيميلك الخاص ✉️
+                </button>
 
-            <button
-              onClick={() => setSelectedDeliveryFilter('private')}
-              className={`px-3 py-1.5 rounded-xl border transition-all ${
-                selectedDeliveryFilter === 'private'
-                  ? 'bg-purple-500/20 border-purple-500/80 text-purple-300 font-bold'
-                  : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
-              }`}
-            >
-              حساب خاص بك بالكامل 🔑
-            </button>
-          </div>
+                <button
+                  onClick={() => setSelectedDeliveryFilter('private')}
+                  className={`px-3 py-1.5 rounded-xl border transition-all ${
+                    selectedDeliveryFilter === 'private'
+                      ? 'bg-purple-500/20 border-purple-500/80 text-purple-300 font-bold'
+                      : 'bg-slate-800/50 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+                  }`}
+                >
+                  حساب خاص بك بالكامل 🔑
+                </button>
+              </div>
 
-          {/* Sort selector */}
-          <div className="flex items-center gap-2 text-xs">
-            <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-400">ترتيب:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-400 cursor-pointer"
-            >
-              <option value="popular">الأكثر مبيعاً وطلباً</option>
-              <option value="price-asc">الأقل سعراً أولاً</option>
-              <option value="price-desc">الأعلى سعراً أولاً</option>
-              <option value="rating">الأعلى تقييماً ⭐</option>
-            </select>
-          </div>
+              {/* Sort selector */}
+              <div className="flex items-center gap-2 text-xs">
+                <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-slate-400">ترتيب:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-amber-400 cursor-pointer"
+                >
+                  <option value="popular">الأكثر مبيعاً وطلباً</option>
+                  <option value="price-asc">الأقل سعراً أولاً</option>
+                  <option value="price-desc">الأعلى سعراً أولاً</option>
+                  <option value="rating">الأعلى تقييماً ⭐</option>
+                </select>
+              </div>
 
-        </div>
+            </div>
 
-        {/* Product Cards Grid */}
-        {filteredProducts.length === 0 ? (
-          <div className="text-center py-16 p-8 rounded-3xl bg-slate-900/40 border border-slate-800 space-y-4">
-            <Search className="w-12 h-12 text-slate-600 mx-auto" />
-            <h3 className="text-lg font-bold text-white">لم نجد اشتراكات تطابق بحثك</h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              جرب البحث بكلمات أخرى أو اختر قسماً مختلفاً من شريط الأقسام في الأعلى.
-            </p>
-            <button
-              onClick={() => {
-                setSearchQuery('');
-                setSelectedCategory('all');
-                setSelectedDeliveryFilter('all');
-              }}
-              className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
-            >
-              عرض كافة الاشتراكات
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                currency={currency}
-                onAddToCart={handleAddToCart}
-                onBuyNow={handleBuyNow}
-                onViewDetails={setDetailProduct}
-              />
-            ))}
-          </div>
-        )}
+            {/* Product Cards Grid */}
+            {filteredProducts.length === 0 ? (
+              <div className="text-center py-16 p-8 rounded-3xl bg-slate-900/40 border border-slate-800 space-y-4">
+                <Search className="w-12 h-12 text-slate-600 mx-auto" />
+                <h3 className="text-lg font-bold text-white">لم نجد اشتراكات تطابق بحثك</h3>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                  جرب البحث بكلمات أخرى أو اختر قسماً مختلفاً من شريط الأقسام في الأعلى.
+                </p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedCategory('all');
+                    setSelectedDeliveryFilter('all');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+                >
+                  عرض كافة الاشتراكات
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    currency={currency}
+                    onAddToCart={handleAddToCart}
+                    onBuyNow={handleBuyNow}
+                    onViewDetails={(prod) => {
+                      setActiveProductSlug(prod.slug);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                  />
+                ))}
+              </div>
+            )}
 
-      </main>
+          </main>
 
-      {/* Trust & Guarantee Section */}
-      <TrustFeaturesSection />
+          {/* Trust & Guarantee Section */}
+          <TrustFeaturesSection />
 
-      {/* Customer Reviews Section */}
-      <TestimonialsSection reviews={MOCK_REVIEWS} />
+          {/* Customer Reviews Section */}
+          <TestimonialsSection reviews={MOCK_REVIEWS} />
 
-      {/* FAQ Section */}
-      <FaqSection />
+          {/* FAQ Section */}
+          <FaqSection />
+        </>
+      )}
 
       {/* Footer */}
       <Footer
         onOpenTracking={() => setIsTrackingOpen(true)}
         onOpenAdvisor={() => setIsAdvisorOpen(true)}
+        onOpenCustomerPortal={() => setIsCustomerPortalOpen(true)}
         onSelectCategory={setSelectedCategory}
       />
 
@@ -494,6 +664,27 @@ export default function App() {
         onClose={() => setDetailProduct(null)}
         onAddToCart={handleAddToCart}
         onBuyNow={handleBuyNow}
+        onOpenFullPage={(slug) => {
+          setDetailProduct(null);
+          setActiveProductSlug(slug);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+      />
+
+      {/* Customer Self-Service Subscriptions Management Portal */}
+      <CustomerPortalModal
+        isOpen={isCustomerPortalOpen}
+        onClose={() => setIsCustomerPortalOpen(false)}
+        subscriptions={subscriptions}
+        currency={currency}
+        onToggleAutoRenew={handleToggleAutoRenew}
+        onRenewNow={handleRenewNow}
+        onCancelSubscription={handleCancelSubscription}
+        onOpenProductDetail={(slug) => {
+          setIsCustomerPortalOpen(false);
+          setActiveProductSlug(slug);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
 
       {/* Cart Drawer */}
@@ -566,8 +757,12 @@ export default function App() {
         onClose={() => setIsAdminOpen(false)}
         orders={orders}
         products={products}
+        subscriptions={subscriptions}
         currency={currency}
         onUpdateOrderStatus={handleUpdateOrderStatus}
+        onUpdateSubscriptionStatus={handleUpdateSubscriptionStatus}
+        onToggleCustomerAutoRenew={handleToggleAutoRenew}
+        onExtendSubscription={handleExtendSubscription}
         onAddProduct={handleAddNewProduct}
         onUpdateProduct={handleUpdateProduct}
         onDeleteProduct={handleDeleteProduct}

@@ -10,7 +10,8 @@ import {
   Star, 
   HelpCircle, 
   AlertCircle,
-  FileCheck
+  FileCheck,
+  ExternalLink
 } from 'lucide-react';
 import { ProductBrandIcon } from './ProductBrandIcon';
 import { SubscriptionProduct, PlanVariant, CurrencyCode } from '../types/store';
@@ -22,6 +23,7 @@ interface ProductDetailModalProps {
   onClose: () => void;
   onAddToCart: (product: SubscriptionProduct, plan: PlanVariant) => void;
   onBuyNow: (product: SubscriptionProduct, plan: PlanVariant) => void;
+  onOpenFullPage?: (productSlug: string) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -30,6 +32,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   onClose,
   onAddToCart,
   onBuyNow,
+  onOpenFullPage,
 }) => {
   if (!product) return null;
 
@@ -49,12 +52,27 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           className="relative px-6 py-6 border-b border-slate-800"
           style={{ background: `linear-gradient(135deg, ${product.colorScheme.bgGlow}, #0f172a)` }}
         >
-          <button
-            onClick={onClose}
-            className="absolute top-5 left-5 p-2 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="absolute top-5 left-5 flex items-center gap-2">
+            {onOpenFullPage && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onOpenFullPage(product.slug);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-amber-500/20 text-slate-300 hover:text-amber-300 border border-slate-700 hover:border-amber-500/30 text-xs font-bold transition-all"
+                title="فتح الصفحة التفصيلية الكاملة للأداة مع مقارنة الأسعار"
+              >
+                <span>الصفحة التفصيلية</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
           <div className="flex items-start gap-4">
             <div className="shrink-0">
