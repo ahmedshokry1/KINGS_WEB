@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -40,6 +40,17 @@ jobs:
       - name: Build project
         run: npm run build
 
+      - name: Create 404 fallback for SPA routing
+        run: cp dist/index.html dist/404.html
+
+      # 1. Option A: Deploy to gh-pages branch (works if Settings > Pages is "Deploy from a branch -> gh-pages")
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+
+      # 2. Option B: Deploy directly to GitHub Pages (works if Settings > Pages is "GitHub Actions")
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
